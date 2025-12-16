@@ -5,19 +5,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {NodePath} from '@babel/core';
+import { NodePath } from '@babel/core';
 import * as t from '@babel/types';
 import {
   CompilerError,
   CompilerErrorDetail,
   ErrorCategory,
 } from '../CompilerError';
-import {ExternalFunction, ReactFunctionType} from '../HIR/Environment';
-import {CodegenFunction} from '../ReactiveScopes';
-import {isComponentDeclaration} from '../Utils/ComponentDeclaration';
-import {isHookDeclaration} from '../Utils/HookDeclaration';
-import {assertExhaustive} from '../Utils/utils';
-import {insertGatedFunctionDeclaration} from './Gating';
+import { ExternalFunction, ReactFunctionType } from '../HIR/Environment';
+import { CodegenFunction } from '../ReactiveScopes';
+import { isComponentDeclaration } from '../Utils/ComponentDeclaration';
+import { isHookDeclaration } from '../Utils/HookDeclaration';
+import { assertExhaustive } from '../Utils/utils';
+import { insertGatedFunctionDeclaration } from './Gating';
 import {
   addImportsToProgram,
   ProgramContext,
@@ -29,14 +29,14 @@ import {
   ParsedPluginOptions,
   PluginOptions,
 } from './Options';
-import {compileFn} from './Pipeline';
+import { compileFn } from './Pipeline';
 import {
   filterSuppressionsThatAffectFunction,
   findProgramSuppressions,
   suppressionsToCompilerError,
 } from './Suppression';
-import {GeneratedSource} from '../HIR';
-import {Err, Ok, Result} from '../Utils/Result';
+import { GeneratedSource } from '../HIR';
+import { Err, Ok, Result } from '../Utils/Result';
 
 export type CompilerPass = {
   opts: ParsedPluginOptions;
@@ -68,7 +68,7 @@ export function tryFindDirectiveEnablingMemoization(
 
 export function findDirectiveDisablingMemoization(
   directives: Array<t.Directive>,
-  {customOptOutDirectives}: PluginOptions,
+  { customOptOutDirectives }: PluginOptions,
 ): t.Directive | null {
   if (customOptOutDirectives != null) {
     return (
@@ -98,13 +98,13 @@ function findDirectivesDynamicGating(
     return Ok(null);
   }
   const errors = new CompilerError();
-  const result: Array<{directive: t.Directive; match: string}> = [];
+  const result: Array<{ directive: t.Directive; match: string }> = [];
 
   for (const directive of directives) {
     const maybeMatch = DYNAMIC_GATING_DIRECTIVE.exec(directive.value.value);
     if (maybeMatch != null && maybeMatch[1] != null) {
       if (t.isValidIdentifier(maybeMatch[1])) {
-        result.push({directive, match: maybeMatch[1]});
+        result.push({ directive, match: maybeMatch[1] });
       } else {
         errors.push({
           reason: `Dynamic gating directive is not a valid JavaScript identifier`,
@@ -357,7 +357,7 @@ function isFilePartOfSources(
 }
 
 export type CompileProgramMetadata = {
-  retryErrors: Array<{fn: BabelFn; error: CompilerError}>;
+  retryErrors: Array<{ fn: BabelFn; error: CompilerError }>;
   inferredEffectLocations: Set<t.SourceLocation>;
 };
 /**
@@ -539,6 +539,19 @@ function findFunctionsToCompile(
       return;
     }
 
+
+    /*
+     * If the function has 'use no memo', we should not traverse into it.
+     * This acts as a deep barrier for compilation.
+     */
+    if (
+      findDirectiveDisablingMemoization(fn.node.body.directives, pass.opts) !=
+      null
+    ) {
+      fn.skip();
+      return;
+    }
+
     /*
      * We may be generating a new FunctionDeclaration node, so we must skip over it or this
      * traversal will loop infinitely.
@@ -547,7 +560,7 @@ function findFunctionsToCompile(
     programContext.alreadyCompiled.add(fn.node);
     fn.skip();
 
-    queue.push({kind: 'original', fn, fnType});
+    queue.push({ kind: 'original', fn, fnType });
   };
 
   // Main traversal to compile with Forget
@@ -577,7 +590,7 @@ function findFunctionsToCompile(
     },
     {
       ...pass,
-      opts: {...pass.opts, ...pass.opts},
+      opts: { ...pass.opts, ...pass.opts },
       filename: pass.filename ?? null,
     },
   );
@@ -722,8 +735,8 @@ function tryCompileFunction(
   programContext: ProgramContext,
   outputMode: CompilerOutputMode,
 ):
-  | {kind: 'compile'; compiledFn: CodegenFunction}
-  | {kind: 'error'; error: unknown} {
+  | { kind: 'compile'; compiledFn: CodegenFunction }
+  | { kind: 'error'; error: unknown } {
   /**
    * Note that Babel does not attach comment nodes to nodes; they are dangling off of the
    * Program node itself. We need to figure out whether an eslint suppression range
@@ -755,7 +768,7 @@ function tryCompileFunction(
       ),
     };
   } catch (err) {
-    return {kind: 'error', error: err};
+    return { kind: 'error', error: err };
   }
 }
 
@@ -799,7 +812,7 @@ function retryCompileFunction(
   } catch (err) {
     // TODO: we might want to log error here, but this will also result in duplicate logging
     if (err instanceof CompilerError) {
-      programContext.retryErrors.push({fn, error: err});
+      programContext.retryErrors.push({ fn, error: err });
     }
     return null;
   }
@@ -817,7 +830,7 @@ function applyCompiledFunctions(
 ): void {
   let referencedBeforeDeclared = null;
   for (const result of compiledFns) {
-    const {kind, originalFn, compiledFn} = result;
+    const { kind, originalFn, compiledFn } = result;
     const transformedFn = createNewFunctionNode(originalFn, compiledFn);
     programContext.alreadyCompiled.add(transformedFn);
 
@@ -1175,7 +1188,7 @@ function isValidComponentParams(
       return !params[0].isRestElement();
     } else if (params[1].isIdentifier()) {
       // check if second param might be a ref
-      const {name} = params[1].node;
+      const { name } = params[1].node;
       return name.includes('ref') || name.includes('Ref');
     } else {
       /**
@@ -1380,7 +1393,7 @@ function getFunctionReferencedBeforeDeclarationAtTopLevel(
   program: NodePath<t.Program>,
   fns: Array<CompileResult>,
 ): Set<CompileResult> {
-  const fnNames = new Map<string, {id: t.Identifier; fn: CompileResult}>(
+  const fnNames = new Map<string, { id: t.Identifier; fn: CompileResult }>(
     fns
       .map<[NodePath<t.Expression> | null, CompileResult]>(fn => [
         getFunctionName(fn.originalFn),
@@ -1390,7 +1403,7 @@ function getFunctionReferencedBeforeDeclarationAtTopLevel(
         (entry): entry is [NodePath<t.Identifier>, CompileResult] =>
           !!entry[0] && entry[0].isIdentifier(),
       )
-      .map(entry => [entry[0].node.name, {id: entry[0].node, fn: entry[1]}]),
+      .map(entry => [entry[0].node.name, { id: entry[0].node, fn: entry[1] }]),
   );
   const referencedBeforeDeclaration = new Set<CompileResult>();
 
@@ -1447,8 +1460,8 @@ export function getReactCompilerRuntimeModule(
   } else {
     CompilerError.invariant(
       target != null &&
-        target.kind === 'donotuse_meta_internal' &&
-        typeof target.runtimeModule === 'string',
+      target.kind === 'donotuse_meta_internal' &&
+      typeof target.runtimeModule === 'string',
       {
         reason: 'Expected target to already be validated',
         description: null,

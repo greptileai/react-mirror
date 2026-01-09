@@ -1606,7 +1606,7 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if component stack is passed twice', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s%s', '\n    in div', '\n    in div');
-        assertConsoleWarnDev(['Hi']);
+        assertConsoleWarnDev(['Hi \n    in div (at **)']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1621,7 +1621,10 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s%s', '\n    in div', '\n    in div');
         console.warn('Bye %s%s', '\n    in div', '\n    in div');
-        assertConsoleWarnDev(['Hi', 'Bye']);
+        assertConsoleWarnDev([
+          'Hi \n    in div (at **)',
+          'Bye \n    in div (at **)',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -2678,7 +2681,7 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if component stack is passed twice', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s%s', '\n    in div', '\n    in div');
-        assertConsoleErrorDev(['Hi']);
+        assertConsoleErrorDev(['Hi \n    in div (at **)']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2693,7 +2696,10 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s%s', '\n    in div', '\n    in div');
         console.error('Bye %s%s', '\n    in div', '\n    in div');
-        assertConsoleErrorDev(['Hi', 'Bye']);
+        assertConsoleErrorDev([
+          'Hi \n    in div (at **)',
+          'Bye \n    in div (at **)',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2750,6 +2756,119 @@ describe('ReactInternalTestUtils console assertions', () => {
         Expected messages should be an array of strings but was given type "string"."
       `);
       assertConsoleErrorDev(['Hi', 'Wow', 'Bye']);
+    });
+
+    describe('\\n    in <stack> placeholder', () => {
+      // @gate __DEV__
+      it('fails if \\n    in <stack> is used for a component stack instead of an error stack', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('Warning message\n    in div');
+          assertConsoleErrorDev(['Warning message\n    in <stack>']);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "Warning message
+              in <stack>"
+          Received: "Warning message
+              in div (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)")."
+        `);
+      });
+
+      // @gate __DEV__
+      it('fails if \\n    in <stack> is used for multiple component stacks', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('First warning\n    in span');
+          console.error('Second warning\n    in div');
+          assertConsoleErrorDev([
+            'First warning\n    in <stack>',
+            'Second warning\n    in <stack>',
+          ]);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "First warning
+              in <stack>"
+          Received: "First warning
+              in span (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)").
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "Second warning
+              in <stack>"
+          Received: "Second warning
+              in div (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)")."
+        `);
+      });
+
+      // @gate __DEV__
+      it('allows \\n    in <stack> for actual error stack traces', () => {
+        // This should pass - \n    in <stack> is correctly used for an error stack
+        console.error(
+          'Error: Something went wrong\n    at someFunction (file.js:10:5)\n    at anotherFunction (file.js:20:10)'
+        );
+        assertConsoleErrorDev(['Error: Something went wrong\n    in <stack>']);
+      });
+
+      // @gate __DEV__
+      it('fails if error stack trace is present but \\n    in <stack> is not expected', () => {
+        const message = expectToThrowFailure(() => {
+          console.error(
+            'Error: Something went wrong\n    at someFunction (file.js:10:5)'
+          );
+          assertConsoleErrorDev(['Error: Something went wrong']);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Unexpected error stack trace for:
+            "Error: Something went wrong
+              in someFunction (at **)"
+
+          If this error should include an error stack trace, add \\n    in <stack> to your expected message (e.g., "Error: message\\n    in <stack>")."
+        `);
+      });
+
+      // @gate __DEV__
+      it('fails if \\n    in <stack> is expected but no stack is present', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('Error: Something went wrong');
+          assertConsoleErrorDev([
+            'Error: Something went wrong\n    in <stack>',
+          ]);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Missing error stack trace for:
+            "Error: Something went wrong"
+
+          The expected message uses \\n    in <stack> but the actual error doesn't include an error stack trace.
+          If this error should not have an error stack trace, remove \\n    in <stack> from your expected message."
+        `);
+      });
+    });
+
+    describe('[Server] placeholder', () => {
+      // @gate __DEV__
+      it('expands [Server] to ANSI escape sequence for server badge', () => {
+        const serverBadge = '\u001b[0m\u001b[7m Server \u001b[0m';
+        console.error(serverBadge + 'Error: something went wrong');
+        assertConsoleErrorDev([
+          ['[Server] Error: something went wrong', {withoutStack: true}],
+        ]);
+      });
     });
 
     it('should fail if waitFor is called before asserting', async () => {

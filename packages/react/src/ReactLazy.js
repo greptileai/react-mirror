@@ -117,13 +117,13 @@ function lazyInitializer<T>(payload: Payload<T>): T {
               // $FlowFixMe
               ioInfo.value.value = debugValue;
             }
-            // Make the thenable introspectable
-            if (thenable.status === undefined) {
-              const fulfilledThenable: FulfilledThenable<{default: T, ...}> =
-                (thenable: any);
-              fulfilledThenable.status = 'fulfilled';
-              fulfilledThenable.value = moduleObject;
-            }
+          }
+          // Make the thenable introspectable
+          if (thenable.status === undefined) {
+            const fulfilledThenable: FulfilledThenable<{default: T, ...}> =
+              (thenable: any);
+            fulfilledThenable.status = 'fulfilled';
+            fulfilledThenable.value = moduleObject;
           }
         }
       },
@@ -151,13 +151,13 @@ function lazyInitializer<T>(payload: Payload<T>): T {
               // $FlowFixMe
               ioInfo.value.reason = error;
             }
-            // Make the thenable introspectable
-            if (thenable.status === undefined) {
-              const rejectedThenable: RejectedThenable<{default: T, ...}> =
-                (thenable: any);
-              rejectedThenable.status = 'rejected';
-              rejectedThenable.reason = error;
-            }
+          }
+          // Make the thenable introspectable
+          if (thenable.status === undefined) {
+            const rejectedThenable: RejectedThenable<{default: T, ...}> =
+              (thenable: any);
+            rejectedThenable.status = 'rejected';
+            rejectedThenable.reason = error;
           }
         }
       },

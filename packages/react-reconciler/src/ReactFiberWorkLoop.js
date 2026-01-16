@@ -1072,8 +1072,15 @@ export function performWorkOnRoot(
   lanes: Lanes,
   forceSync: boolean,
 ): void {
+  // Defensive check: if executionContext is set but workInProgressRoot is null,
+  // the executionContext is stale from a previous interrupted render (e.g., after
+  // a breakpoint/alert in Firefox). Reset it instead of throwing.
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+    if (workInProgressRoot === null) {
+      executionContext = NoContext;
+    } else {
     throw new Error('Should not already be working.');
+    }
   }
 
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
@@ -3459,8 +3466,15 @@ function completeRoot(
   } while (pendingEffectsStatus !== NO_PENDING_EFFECTS);
   flushRenderPhaseStrictModeWarningsInDEV();
 
+  // Defensive check: if executionContext is set but workInProgressRoot is null,
+  // the executionContext is stale from a previous interrupted commit (e.g., after
+  // a breakpoint/alert in Firefox). Reset it instead of throwing.
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+    if (workInProgressRoot === null) {
+      executionContext = NoContext;
+    } else {
     throw new Error('Should not already be working.');
+    }
   }
 
   if (enableProfilerTimer && enableComponentPerformanceTrack) {

@@ -434,13 +434,28 @@ function createSymbolProperty(
   propertyName: string,
   symbolName: string,
 ): ObjectProperty {
+  const globalThisPlace = createTemporaryPlace(fn.env, instr.value.loc);
+  const globalThisInstruction: Instruction = {
+    id: makeInstructionId(0),
+    lvalue: {...globalThisPlace, effect: Effect.Read},
+    value: {
+      kind: 'LoadGlobal',
+      binding: {kind: 'Global', name: 'globalThis'},
+      loc: instr.value.loc,
+    },
+    effects: null,
+    loc: instr.loc,
+  };
+  nextInstructions.push(globalThisInstruction);
+
   const symbolPlace = createTemporaryPlace(fn.env, instr.value.loc);
   const symbolInstruction: Instruction = {
     id: makeInstructionId(0),
-    lvalue: {...symbolPlace, effect: Effect.Mutate},
+    lvalue: {...symbolPlace, effect: Effect.Read},
     value: {
-      kind: 'LoadGlobal',
-      binding: {kind: 'Global', name: 'Symbol'},
+      kind: 'PropertyLoad',
+      object: {...globalThisInstruction.lvalue},
+      property: makePropertyLiteral('Symbol'),
       loc: instr.value.loc,
     },
     effects: null,

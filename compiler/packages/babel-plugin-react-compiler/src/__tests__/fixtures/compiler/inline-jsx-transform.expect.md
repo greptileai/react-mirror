@@ -91,7 +91,7 @@ function Parent(t0) {
       t1 = <div ref={ref}>{children}</div>;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: "div",
         ref: ref,
         key: null,
@@ -116,8 +116,8 @@ function Child(t0) {
       t1 = <>{children}</>;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
-        type: Symbol.for("react.fragment"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
+        type: globalThis.Symbol.for("react.fragment"),
         ref: null,
         key: null,
         props: { children: children },
@@ -135,12 +135,12 @@ function GrandChild(t0) {
   const $ = _c2(3);
   const { className } = t0;
   let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] === globalThis.Symbol.for("react.memo_cache_sentinel")) {
     if (DEV) {
       t1 = <React.Fragment key="fragmentKey">Hello world</React.Fragment>;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: React.Fragment,
         ref: null,
         key: "fragmentKey",
@@ -157,7 +157,7 @@ function GrandChild(t0) {
       t2 = <span className={className}>{t1}</span>;
     } else {
       t2 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: "span",
         ref: null,
         key: null,
@@ -176,12 +176,12 @@ function ParentAndRefAndKey(props) {
   const $ = _c2(1);
   const testRef = useRef();
   let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] === globalThis.Symbol.for("react.memo_cache_sentinel")) {
     if (DEV) {
       t0 = <Parent a="a" b={{ b: "b" }} c={C} key="testKey" ref={testRef} />;
     } else {
       t0 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Parent,
         ref: testRef,
         key: "testKey",
@@ -205,7 +205,7 @@ function ParentAndChildren(props) {
         t1 = <div key="d">{props.foo}</div>;
       } else {
         t1 = {
-          $$typeof: Symbol.for("react.transitional.element"),
+          $$typeof: globalThis.Symbol.for("react.transitional.element"),
           type: "div",
           ref: null,
           key: "d",
@@ -226,7 +226,7 @@ function ParentAndChildren(props) {
       t1 = <Child key="a" {...props} />;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Child,
         ref: null,
         key: "a",
@@ -246,7 +246,7 @@ function ParentAndChildren(props) {
       t3 = <GrandChild key="c" className={t2} {...props} />;
     } else {
       t3 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: GrandChild,
         ref: null,
         key: "c",
@@ -277,7 +277,7 @@ function ParentAndChildren(props) {
       );
     } else {
       t5 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Child,
         ref: null,
         key: "b",
@@ -301,7 +301,7 @@ function ParentAndChildren(props) {
       );
     } else {
       t6 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Parent,
         ref: null,
         key: null,
@@ -321,13 +321,13 @@ const propsToSpread = { a: "a", b: "b", c: "c" };
 function PropsSpread() {
   const $ = _c2(1);
   let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] === globalThis.Symbol.for("react.memo_cache_sentinel")) {
     let t1;
     if (DEV) {
       t1 = <Test key="a" {...propsToSpread} />;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Test,
         ref: null,
         key: "a",
@@ -339,7 +339,7 @@ function PropsSpread() {
       t2 = <Test key="b" {...propsToSpread} a="z" />;
     } else {
       t2 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Test,
         ref: null,
         key: "b",
@@ -355,8 +355,8 @@ function PropsSpread() {
       );
     } else {
       t0 = {
-        $$typeof: Symbol.for("react.transitional.element"),
-        type: Symbol.for("react.fragment"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
+        type: globalThis.Symbol.for("react.fragment"),
         ref: null,
         key: null,
         props: { children: [t1, t2] },
@@ -373,12 +373,12 @@ function ConditionalJsx(t0) {
   const $ = _c2(2);
   const { shouldWrap } = t0;
   let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] === globalThis.Symbol.for("react.memo_cache_sentinel")) {
     if (DEV) {
       t1 = <div>Hello</div>;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: "div",
         ref: null,
         key: null,
@@ -394,12 +394,12 @@ function ConditionalJsx(t0) {
   if (shouldWrap) {
     const t2 = content;
     let t3;
-    if ($[1] === Symbol.for("react.memo_cache_sentinel")) {
+    if ($[1] === globalThis.Symbol.for("react.memo_cache_sentinel")) {
       if (DEV) {
         t3 = <Parent>{t2}</Parent>;
       } else {
         t3 = {
-          $$typeof: Symbol.for("react.transitional.element"),
+          $$typeof: globalThis.Symbol.for("react.transitional.element"),
           type: Parent,
           ref: null,
           key: null,
@@ -434,7 +434,7 @@ function ComponentWithSpreadPropsAndRef(t0) {
       t1 = <Foo ref={ref} {...other} />;
     } else {
       t1 = {
-        $$typeof: Symbol.for("react.transitional.element"),
+        $$typeof: globalThis.Symbol.for("react.transitional.element"),
         type: Foo,
         ref: ref,
         key: null,

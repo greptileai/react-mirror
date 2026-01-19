@@ -53,7 +53,7 @@ function shouldVisit(fn: BabelFn): boolean {
 }
 
 function buildTypeOfReactForget(): t.Statement {
-  // typeof globalThis[Symbol.for("react_forget")]
+  // typeof globalThis[globalThis.Symbol.for("react_forget")]
   return t.expressionStatement(
     t.unaryExpression(
       'typeof',
@@ -61,7 +61,10 @@ function buildTypeOfReactForget(): t.Statement {
         t.identifier('globalThis'),
         t.callExpression(
           t.memberExpression(
-            t.identifier('Symbol'),
+            t.memberExpression(
+              t.identifier('globalThis'),
+              t.identifier('Symbol'),
+            ),
             t.identifier('for'),
             false,
             false,

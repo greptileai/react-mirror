@@ -1580,7 +1580,7 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1527:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1528:16)',
         );
       }
 
@@ -1599,7 +1599,7 @@ describe('ReactFlightDOMNode', () => {
           ).toBe(
             '' +
               '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1433:25)',
+              '    in App (file://ReactFlightDOMNode-test.js:1453:25)',
           );
         }
       } else {

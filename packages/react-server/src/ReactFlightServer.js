@@ -612,7 +612,7 @@ export type Request = {
   didWarnForKey: null | WeakSet<ReactComponentInfo>,
   writtenDebugObjects: WeakMap<Reference, string>,
   deferredDebugObjects: null | DeferredDebugStore,
-  partialDebugInfos: null | WeakMap<ReactDebugInfo, number>,
+  earlyDebugInfos: null | WeakSet<ReactDebugInfoEntry>,
 };
 
 const {
@@ -737,7 +737,7 @@ function RequestInstance(
           existing: new Map(),
         }
       : null;
-    this.partialDebugInfos = null;
+    this.earlyDebugInfos = null;
   }
 
   let timeOrigin: number;
@@ -3513,7 +3513,13 @@ function renderModelDestructive(
               return outlineTask(request, task);
             } else {
               // Forward any debug info we have the first time we see it.
-              forwardDebugInfo(request, task, debugInfo);
+              // If this element came from a lazy chunk, then the Flight Client transferred
+              // the lazy chunk's debug info onto the inner element in `initializeElement`.
+              // We might have already written some of that debug info out into the stream
+              // (before the lazy resolved), so we shouldn't do it again.
+              // The consumer of this stream will once again transfer the debug info from
+              // the lazy chunk onto the element itself, thus recombining them into one array.
+              forwardDebugInfoOnce(request, task, debugInfo);
             }
           }
         }
@@ -3605,7 +3611,7 @@ function renderModelDestructive(
               return outlineTask(request, task);
             } else {
               // Forward any debug info we have the first time we see it.
-              forwardPartialDebugInfo(request, task, debugInfo);
+              forwardDebugInfoOnce(request, task, debugInfo);
             }
           }
 
@@ -3634,7 +3640,7 @@ function renderModelDestructive(
               return outlineTask(request, task);
             } else {
               // Forward any debug info we have the first time we see it.
-              forwardPartialDebugInfo(request, task, debugInfo);
+              forwardDebugInfoOnce(request, task, debugInfo);
             }
           }
         }
@@ -5331,26 +5337,20 @@ function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   request.completedDebugChunks.push(processedChunk);
 }
 
-function forwardPartialDebugInfo(
+function forwardDebugInfoOnce(
   request: Request,
   task: Task,
   debugInfo: ReactDebugInfo,
 ) {
-  // Track how many items from this array have already been forwarded.
-  // If new ones get appended later, we won't emit them again.
-  let partialDebugInfos = request.partialDebugInfos;
-  if (!partialDebugInfos) {
-    partialDebugInfos = request.partialDebugInfos = new WeakMap();
+  // Track which items from this array have already been forwarded,
+  // and don't emit them again. Note that elements can sometimes move
+  // from one array to another, e.g. when a lazy chunk's debug info is
+  // transferred to the element it resolves to in `initializeElement`.
+  let earlyDebugInfos = request.earlyDebugInfos;
+  if (!earlyDebugInfos) {
+    earlyDebugInfos = request.earlyDebugInfos = new WeakSet();
   }
-
-  const startIndex = partialDebugInfos.get(debugInfo) || 0;
-  if (startIndex === debugInfo.length) {
-    // Nothing new to emit.
-    return;
-  }
-
-  forwardDebugInfoFromIndex(request, task, debugInfo, startIndex);
-  partialDebugInfos.set(debugInfo, debugInfo.length);
+  forwardDebugInfoImpl(request, task, debugInfo, earlyDebugInfos);
 }
 
 function forwardDebugInfo(
@@ -5358,18 +5358,24 @@ function forwardDebugInfo(
   task: Task,
   debugInfo: ReactDebugInfo,
 ) {
-  forwardDebugInfoFromIndex(request, task, debugInfo, 0);
+  forwardDebugInfoImpl(request, task, debugInfo, null);
 }
 
-function forwardDebugInfoFromIndex(
+function forwardDebugInfoImpl(
   request: Request,
   task: Task,
   debugInfo: ReactDebugInfo,
-  startIndex: number,
+  seenInfos: WeakSet<ReactDebugInfoEntry> | null,
 ) {
   const id = task.id;
-  for (let i = startIndex; i < debugInfo.length; i++) {
+  for (let i = 0; i < debugInfo.length; i++) {
     const info = debugInfo[i];
+    if (seenInfos !== null) {
+      if (seenInfos.has(info)) {
+        continue;
+      }
+      seenInfos.add(info);
+    }
 
     if (typeof info.time === 'number') {
       // When forwarding time we need to ensure to convert it to the time space of the payload.

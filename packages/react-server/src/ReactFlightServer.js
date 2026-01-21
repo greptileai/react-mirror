@@ -612,7 +612,7 @@ export type Request = {
   didWarnForKey: null | WeakSet<ReactComponentInfo>,
   writtenDebugObjects: WeakMap<Reference, string>,
   deferredDebugObjects: null | DeferredDebugStore,
-  earlyDebugInfos: null | WeakSet<ReactDebugInfoEntry>,
+  earlyDebugInfoEntries: null | WeakSet<ReactDebugInfoEntry>,
 };
 
 const {
@@ -737,7 +737,7 @@ function RequestInstance(
           existing: new Map(),
         }
       : null;
-    this.earlyDebugInfos = null;
+    this.earlyDebugInfoEntries = null;
   }
 
   let timeOrigin: number;
@@ -5346,11 +5346,11 @@ function forwardDebugInfoOnce(
   // and don't emit them again. Note that elements can sometimes move
   // from one array to another, e.g. when a lazy chunk's debug info is
   // transferred to the element it resolves to in `initializeElement`.
-  let earlyDebugInfos = request.earlyDebugInfos;
-  if (!earlyDebugInfos) {
-    earlyDebugInfos = request.earlyDebugInfos = new WeakSet();
+  let earlyDebugInfoEntries = request.earlyDebugInfoEntries;
+  if (!earlyDebugInfoEntries) {
+    earlyDebugInfoEntries = request.earlyDebugInfoEntries = new WeakSet();
   }
-  forwardDebugInfoImpl(request, task, debugInfo, earlyDebugInfos);
+  forwardDebugInfoImpl(request, task, debugInfo, earlyDebugInfoEntries);
 }
 
 function forwardDebugInfo(

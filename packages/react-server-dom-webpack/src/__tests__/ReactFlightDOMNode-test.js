@@ -2079,7 +2079,13 @@ describe('ReactFlightDOMNode', () => {
           // we filter those out using `filterStackFrame`.
           filterCodeLocInfo(ownerStack),
         ),
-      ).toBe('\n' + '    in ClientComponent (at **)\n' + '    in App (at **)');
+      ).toBe(
+        '\n' +
+          (gate(flags => flags.enableAsyncDebugInfo)
+            ? '    in ClientComponent (at **)\n'
+            : '') +
+          '    in App (at **)',
+      );
 
       expect(result).toContain(
         'Switched to client rendering because the server rendering aborted due to:\n\n' +

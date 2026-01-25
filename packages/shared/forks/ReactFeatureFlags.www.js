@@ -33,6 +33,7 @@ export const {
   enableScrollEndPolyfill,
   enableFragmentRefs,
   enableFragmentRefsScrollIntoView,
+  enableFragmentRefsTextNodes,
   enableAsyncDebugInfo,
   enableInternalInstanceMap,
 } = dynamicFeatureFlags;

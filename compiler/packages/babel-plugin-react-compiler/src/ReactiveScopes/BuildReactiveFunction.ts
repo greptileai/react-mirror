@@ -22,6 +22,7 @@ import {
   ReactiveBreakTerminal,
   ReactiveContinueTerminal,
   ReactiveFunction,
+  ReactiveInstruction,
   ReactiveLogicalValue,
   ReactiveSequenceValue,
   ReactiveTerminalStatement,
@@ -60,6 +61,84 @@ class Driver {
 
   constructor(cx: Context) {
     this.cx = cx;
+  }
+
+  /*
+   * Wraps a continuation result with preceding instructions. If there are no
+   * instructions, returns the continuation as-is. Otherwise, wraps the continuation's
+   * value in a SequenceExpression with the instructions prepended.
+   */
+  wrapWithSequence(
+    instructions: Array<ReactiveInstruction>,
+    continuation: {
+      block: BlockId;
+      value: ReactiveValue;
+      place: Place;
+      id: InstructionId;
+    },
+    loc: SourceLocation,
+  ): {block: BlockId; value: ReactiveValue; place: Place; id: InstructionId} {
+    if (instructions.length === 0) {
+      return continuation;
+    }
+    const sequence: ReactiveSequenceValue = {
+      kind: 'SequenceExpression',
+      instructions,
+      id: continuation.id,
+      value: continuation.value,
+      loc,
+    };
+    return {
+      block: continuation.block,
+      value: sequence,
+      place: continuation.place,
+      id: continuation.id,
+    };
+  }
+
+  /*
+   * Extracts the result value from instructions at the end of a value block.
+   * Value blocks generally end in a StoreLocal to assign the value of the
+   * expression. These StoreLocal instructions can be pruned since we represent
+   * value blocks as compound values in ReactiveFunction (no phis). However,
+   * it's also possible to have a value block that ends in an AssignmentExpression,
+   * which we need to keep. So we only prune StoreLocal for temporaries.
+   */
+  extractValueBlockResult(
+    instructions: BasicBlock['instructions'],
+    blockId: BlockId,
+    loc: SourceLocation,
+  ): {block: BlockId; place: Place; value: ReactiveValue; id: InstructionId} {
+    CompilerError.invariant(instructions.length !== 0, {
+      reason: `Expected non-empty instructions in extractValueBlockResult`,
+      description: null,
+      loc,
+    });
+    const instr = instructions.at(-1)!;
+    let place: Place = instr.lvalue;
+    let value: ReactiveValue = instr.value;
+    if (
+      value.kind === 'StoreLocal' &&
+      value.lvalue.place.identifier.name === null
+    ) {
+      place = value.lvalue.place;
+      value = {
+        kind: 'LoadLocal',
+        place: value.value,
+        loc: value.value.loc,
+      };
+    }
+    if (instructions.length === 1) {
+      return {block: blockId, place, value, id: instr.id};
+    }
+    const sequence: ReactiveSequenceValue = {
+      kind: 'SequenceExpression',
+      instructions: instructions.slice(0, -1),
+      id: instr.id,
+      value,
+      loc,
+    };
+    return {block: blockId, place, value: sequence, id: instr.id};
   }
 
   traverseBlock(block: BasicBlock): ReactiveBlock {
@@ -848,11 +927,17 @@ class Driver {
   visitValueBlock(
     id: BlockId,
     loc: SourceLocation,
+    fallthrough: BlockId | null = null,
   ): {block: BlockId; value: ReactiveValue; place: Place; id: InstructionId} {
+    // If we've reached the fallthrough block, stop recursing
+    if (fallthrough !== null && id === fallthrough) {
+      const block = this.cx.ir.blocks.get(id)!;
+      // The fallthrough block should have instructions that we extract the value from
+      return this.extractValueBlockResult(block.instructions, id, loc);
+    }
     const defaultBlock = this.cx.ir.blocks.get(id)!;
     if (defaultBlock.terminal.kind === 'branch') {
-      const instructions = defaultBlock.instructions;
-      if (instructions.length === 0) {
+      if (defaultBlock.instructions.length === 0) {
         return {
           block: defaultBlock.id,
           place: defaultBlock.terminal.test,
@@ -863,145 +948,132 @@ class Driver {
           },
           id: defaultBlock.terminal.id,
         };
-      } else if (defaultBlock.instructions.length === 1) {
-        const instr = defaultBlock.instructions[0]!;
-        CompilerError.invariant(
-          instr.lvalue.identifier.id ===
-            defaultBlock.terminal.test.identifier.id,
-          {
-            reason:
-              'Expected branch block to end in an instruction that sets the test value',
-            loc: instr.lvalue.loc,
-          },
-        );
-        return {
-          block: defaultBlock.id,
-          place: instr.lvalue!,
-          value: instr.value,
-          id: instr.id,
-        };
-      } else {
-        const instr = defaultBlock.instructions.at(-1)!;
-        const sequence: ReactiveSequenceValue = {
-          kind: 'SequenceExpression',
-          instructions: defaultBlock.instructions.slice(0, -1),
-          id: instr.id,
-          value: instr.value,
-          loc: loc,
-        };
-        return {
-          block: defaultBlock.id,
-          place: defaultBlock.terminal.test,
-          value: sequence,
-          id: defaultBlock.terminal.id,
-        };
       }
+      return this.extractValueBlockResult(
+        defaultBlock.instructions,
+        defaultBlock.id,
+        loc,
+      );
     } else if (defaultBlock.terminal.kind === 'goto') {
-      const instructions = defaultBlock.instructions;
-      if (instructions.length === 0) {
-        CompilerError.invariant(false, {
-          reason: 'Expected goto value block to have at least one instruction',
-          loc: GeneratedSource,
-        });
-      } else if (defaultBlock.instructions.length === 1) {
-        const instr = defaultBlock.instructions[0]!;
-        let place: Place = instr.lvalue;
-        let value: ReactiveValue = instr.value;
-        if (
-          /*
-           * Value blocks generally end in a StoreLocal to assign the value of the
-           * expression for this branch. These StoreLocal instructions can be pruned,
-           * since we represent the value blocks as a compund value in ReactiveFunction
-           * (no phis). However, it's also possible to have a value block that ends in
-           * an AssignmentExpression, which we need to keep. So we only prune
-           * StoreLocal for temporaries — any named/promoted values must be used
-           * elsewhere and aren't safe to prune.
-           */
-          value.kind === 'StoreLocal' &&
-          value.lvalue.place.identifier.name === null
-        ) {
-          place = value.lvalue.place;
-          value = {
-            kind: 'LoadLocal',
-            place: value.value,
-            loc: value.value.loc,
-          };
-        }
-        return {
-          block: defaultBlock.id,
-          place,
-          value,
-          id: instr.id,
-        };
-      } else {
-        const instr = defaultBlock.instructions.at(-1)!;
-        let place: Place = instr.lvalue;
-        let value: ReactiveValue = instr.value;
-        if (
-          /*
-           * Value blocks generally end in a StoreLocal to assign the value of the
-           * expression for this branch. These StoreLocal instructions can be pruned,
-           * since we represent the value blocks as a compund value in ReactiveFunction
-           * (no phis). However, it's also possible to have a value block that ends in
-           * an AssignmentExpression, which we need to keep. So we only prune
-           * StoreLocal for temporaries — any named/promoted values must be used
-           * elsewhere and aren't safe to prune.
-           */
-          value.kind === 'StoreLocal' &&
-          value.lvalue.place.identifier.name === null
-        ) {
-          place = value.lvalue.place;
-          value = {
-            kind: 'LoadLocal',
-            place: value.value,
-            loc: value.value.loc,
-          };
-        }
-        const sequence: ReactiveSequenceValue = {
-          kind: 'SequenceExpression',
-          instructions: defaultBlock.instructions.slice(0, -1),
-          id: instr.id,
-          value,
-          loc: loc,
-        };
-        return {
-          block: defaultBlock.id,
-          place,
-          value: sequence,
-          id: instr.id,
-        };
+      if (defaultBlock.instructions.length === 0) {
+        /*
+         * Empty goto blocks just forward to the next block.
+         * Follow the goto to get the actual value.
+         */
+        return this.visitValueBlock(
+          defaultBlock.terminal.block,
+          loc,
+          fallthrough,
+        );
       }
+      return this.extractValueBlockResult(
+        defaultBlock.instructions,
+        defaultBlock.id,
+        loc,
+      );
+    } else if (defaultBlock.terminal.kind === 'maybe-throw') {
+      /*
+       * ReactiveFunction does not explicitly model maybe-throw semantics,
+       * so maybe-throw terminals in value blocks flatten away. We continue
+       * to the continuation block if it's still part of the value block.
+       * The fallthrough parameter tells us when to stop recursing.
+       */
+      const continuationId = defaultBlock.terminal.continuation;
+
+      // If the continuation is the fallthrough, we've reached the end of the value block
+      if (fallthrough !== null && continuationId === fallthrough) {
+        const instructions = defaultBlock.instructions;
+        CompilerError.invariant(instructions.length !== 0, {
+          reason: `Unexpected empty maybe-throw block at value block boundary`,
+          description: null,
+          loc: defaultBlock.terminal.loc,
+        });
+        return this.extractValueBlockResult(instructions, defaultBlock.id, loc);
+      }
+
+      const continuationBlock = this.cx.ir.blocks.get(continuationId)!;
+
+      /*
+       * If the continuation block is empty with a non-maybe-throw terminal,
+       * extract the result from this block's instructions using the continuation
+       * block's ID so visitValueBlockTerminal can find the terminal.
+       */
+      if (
+        continuationBlock.instructions.length === 0 &&
+        continuationBlock.terminal.kind !== 'maybe-throw'
+      ) {
+        return this.extractValueBlockResult(
+          defaultBlock.instructions,
+          continuationBlock.id,
+          loc,
+        );
+      }
+
+      // Recurse to the continuation, passing through the fallthrough
+      const continuation = this.visitValueBlock(
+        continuationId,
+        loc,
+        fallthrough,
+      );
+      return this.wrapWithSequence(
+        defaultBlock.instructions,
+        continuation,
+        loc,
+      );
     } else {
       /*
        * The value block ended in a value terminal, recurse to get the value
-       * of that terminal
+       * of that terminal and stitch them together in a sequence.
        */
       const init = this.visitValueBlockTerminal(defaultBlock.terminal);
-      // Code following the logical terminal
       const final = this.visitValueBlock(init.fallthrough, loc);
-      // Stitch the two together...
-      const sequence: ReactiveSequenceValue = {
-        kind: 'SequenceExpression',
-        instructions: [
+      return this.wrapWithSequence(
+        [
           ...defaultBlock.instructions,
-          {
-            id: init.id,
-            loc,
-            lvalue: init.place,
-            value: init.value,
-          },
+          {id: init.id, loc, lvalue: init.place, value: init.value},
         ],
-        id: final.id,
-        value: final.value,
+        final,
         loc,
-      };
-      return {
-        block: init.fallthrough,
-        value: sequence,
-        place: final.place,
-        id: final.id,
-      };
+      );
     }
+  }
+
+  /*
+   * Visits the test block of a value terminal (optional, logical, ternary) and
+   * returns the result along with the branch terminal. Throws a todo error if
+   * the test block does not end in a branch terminal.
+   */
+  visitTestBlock(
+    testBlockId: BlockId,
+    loc: SourceLocation,
+    terminalKind: string,
+  ): {
+    test: {
+      block: BlockId;
+      value: ReactiveValue;
+      place: Place;
+      id: InstructionId;
+    };
+    branch: {consequent: BlockId; alternate: BlockId; loc: SourceLocation};
+  } {
+    const test = this.visitValueBlock(testBlockId, loc);
+    const testBlock = this.cx.ir.blocks.get(test.block)!;
+    if (testBlock.terminal.kind !== 'branch') {
+      CompilerError.throwTodo({
+        reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for ${terminalKind} test block`,
+        description: null,
+        loc: testBlock.terminal.loc,
+        suggestions: null,
+      });
+    }
+    return {
+      test,
+      branch: {
+        consequent: testBlock.terminal.consequent,
+        alternate: testBlock.terminal.alternate,
+        loc: testBlock.terminal.loc,
+      },
+    };
   }
 
   visitValueBlockTerminal(terminal: Terminal): {
@@ -1012,7 +1084,11 @@ class Driver {
   } {
     switch (terminal.kind) {
       case 'sequence': {
-        const block = this.visitValueBlock(terminal.block, terminal.loc);
+        const block = this.visitValueBlock(
+          terminal.block,
+          terminal.loc,
+          terminal.fallthrough,
+        );
         return {
           value: block.value,
           place: block.place,
@@ -1021,26 +1097,22 @@ class Driver {
         };
       }
       case 'optional': {
-        const test = this.visitValueBlock(terminal.test, terminal.loc);
-        const testBlock = this.cx.ir.blocks.get(test.block)!;
-        if (testBlock.terminal.kind !== 'branch') {
-          CompilerError.throwTodo({
-            reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for optional test block`,
-            description: null,
-            loc: testBlock.terminal.loc,
-            suggestions: null,
-          });
-        }
-        const consequent = this.visitValueBlock(
-          testBlock.terminal.consequent,
+        const {test, branch} = this.visitTestBlock(
+          terminal.test,
           terminal.loc,
+          'optional',
+        );
+        const consequent = this.visitValueBlock(
+          branch.consequent,
+          terminal.loc,
+          terminal.fallthrough,
         );
         const call: ReactiveSequenceValue = {
           kind: 'SequenceExpression',
           instructions: [
             {
               id: test.id,
-              loc: testBlock.terminal.loc,
+              loc: branch.loc,
               lvalue: test.place,
               value: test.value,
             },
@@ -1063,20 +1135,15 @@ class Driver {
         };
       }
       case 'logical': {
-        const test = this.visitValueBlock(terminal.test, terminal.loc);
-        const testBlock = this.cx.ir.blocks.get(test.block)!;
-        if (testBlock.terminal.kind !== 'branch') {
-          CompilerError.throwTodo({
-            reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for logical test block`,
-            description: null,
-            loc: testBlock.terminal.loc,
-            suggestions: null,
-          });
-        }
-
-        const leftFinal = this.visitValueBlock(
-          testBlock.terminal.consequent,
+        const {test, branch} = this.visitTestBlock(
+          terminal.test,
           terminal.loc,
+          'logical',
+        );
+        const leftFinal = this.visitValueBlock(
+          branch.consequent,
+          terminal.loc,
+          terminal.fallthrough,
         );
         const left: ReactiveSequenceValue = {
           kind: 'SequenceExpression',
@@ -1093,8 +1160,9 @@ class Driver {
           loc: terminal.loc,
         };
         const right = this.visitValueBlock(
-          testBlock.terminal.alternate,
+          branch.alternate,
           terminal.loc,
+          terminal.fallthrough,
         );
         const value: ReactiveLogicalValue = {
           kind: 'LogicalExpression',
@@ -1111,23 +1179,20 @@ class Driver {
         };
       }
       case 'ternary': {
-        const test = this.visitValueBlock(terminal.test, terminal.loc);
-        const testBlock = this.cx.ir.blocks.get(test.block)!;
-        if (testBlock.terminal.kind !== 'branch') {
-          CompilerError.throwTodo({
-            reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for ternary test block`,
-            description: null,
-            loc: testBlock.terminal.loc,
-            suggestions: null,
-          });
-        }
-        const consequent = this.visitValueBlock(
-          testBlock.terminal.consequent,
+        const {test, branch} = this.visitTestBlock(
+          terminal.test,
           terminal.loc,
+          'ternary',
+        );
+        const consequent = this.visitValueBlock(
+          branch.consequent,
+          terminal.loc,
+          terminal.fallthrough,
         );
         const alternate = this.visitValueBlock(
-          testBlock.terminal.alternate,
+          branch.alternate,
           terminal.loc,
+          terminal.fallthrough,
         );
         const value: ReactiveTernaryValue = {
           kind: 'ConditionalExpression',
@@ -1145,11 +1210,10 @@ class Driver {
         };
       }
       case 'maybe-throw': {
-        CompilerError.throwTodo({
-          reason: `Support value blocks (conditional, logical, optional chaining, etc) within a try/catch statement`,
+        CompilerError.invariant(false, {
+          reason: `Unexpected maybe-throw in visitValueBlockTerminal - should be handled in visitValueBlock`,
           description: null,
           loc: terminal.loc,
-          suggestions: null,
         });
       }
       case 'label': {

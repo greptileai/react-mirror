@@ -1635,6 +1635,7 @@ describe('ReactFlightDOMNode', () => {
     async function reencodeFlightStream(
       staticChunks,
       dynamicChunks,
+      startTime,
       serverConsumerManifest,
     ) {
       let staticEndTime = -1;
@@ -1663,7 +1664,11 @@ describe('ReactFlightDOMNode', () => {
           const stream = ReactServerDOMServer.renderToPipeableStream(
             decoded,
             webpackMap,
-            {filterStackFrame},
+            {
+              filterStackFrame,
+              // Pass in the original render's startTime to avoid omitting its IO info.
+              startTime,
+            },
           );
 
           const passThrough = new Stream.PassThrough(streamOptions);
@@ -1732,6 +1737,8 @@ describe('ReactFlightDOMNode', () => {
 
       // 1. Render <App />, dividing the output into static and dynamic content.
 
+      let startTime = -1;
+
       let isStatic = true;
       const chunks1 = {
         static: [],
@@ -1740,11 +1747,14 @@ describe('ReactFlightDOMNode', () => {
 
       await new Promise(resolve => {
         setTimeout(async () => {
+          startTime = performance.now() + performance.timeOrigin;
+
           const stream = ReactServerDOMServer.renderToPipeableStream(
             ReactServer.createElement(App),
             webpackMap,
             {
               filterStackFrame,
+              startTime,
               environmentName() {
                 return isStatic ? 'Prerender' : 'Server';
               },
@@ -1783,6 +1793,7 @@ describe('ReactFlightDOMNode', () => {
         await reencodeFlightStream(
           chunks1.static,
           chunks1.dynamic,
+          startTime,
           serverConsumerManifest,
         );
 
@@ -1851,9 +1862,11 @@ describe('ReactFlightDOMNode', () => {
 
       expect(normalizeCodeLocInfo(componentStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic (at **)\n' +
-          '    in Dynamic\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in Dynamic (at **)\n'
+              : '    in Dynamic\n',
+          ) +
           '    in section\n' +
           '    in Suspense\n' +
           '    in body\n' +
@@ -1863,8 +1876,9 @@ describe('ReactFlightDOMNode', () => {
       );
       expect(normalizeCodeLocInfo(ownerStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic (at **)\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo ? '    in Dynamic (at **)\n' : '',
+          ) +
           '    in App (at **)',
       );
 
@@ -2060,9 +2074,11 @@ describe('ReactFlightDOMNode', () => {
       expect(errorLocations).toHaveLength(2);
       expect(normalizeCodeLocInfo(errorLocations[0].componentStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic1 (at **)\n' +
-          '    in Dynamic1\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in Dynamic1 (at **)\n'
+              : '    in Dynamic1\n',
+          ) +
           '    in section\n' +
           '    in Suspense\n' +
           '    in body\n' +
@@ -2072,16 +2088,19 @@ describe('ReactFlightDOMNode', () => {
       );
       expect(normalizeCodeLocInfo(errorLocations[0].ownerStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic1 (at **)\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo ? '    in Dynamic1 (at **)\n' : '',
+          ) +
           '    in App (at **)',
       );
 
       expect(normalizeCodeLocInfo(errorLocations[1].componentStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic2 (at **)\n' +
-          '    in Dynamic2\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in Dynamic2 (at **)\n'
+              : '    in Dynamic2\n',
+          ) +
           '    in section\n' +
           '    in Suspense\n' +
           '    in body\n' +
@@ -2091,8 +2110,9 @@ describe('ReactFlightDOMNode', () => {
       );
       expect(normalizeCodeLocInfo(errorLocations[1].ownerStack)).toBe(
         '\n' +
-          // TODO: IO info is getting omitted when reencoding
-          // '    in Dynamic2 (at **)\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo ? '    in Dynamic2 (at **)\n' : '',
+          ) +
           '    in App (at **)',
       );
 
@@ -2176,6 +2196,8 @@ describe('ReactFlightDOMNode', () => {
 
       // 1. Render <App />, dividing the output into static and dynamic content.
 
+      let startTime = -1;
+
       let isStatic = true;
       const chunks1 = {
         static: [],
@@ -2184,11 +2206,14 @@ describe('ReactFlightDOMNode', () => {
 
       await new Promise(resolve => {
         setTimeout(async () => {
+          startTime = performance.now() + performance.timeOrigin;
+
           const stream = ReactServerDOMServer.renderToPipeableStream(
             ReactServer.createElement(App),
             webpackMap,
             {
               filterStackFrame,
+              startTime,
               environmentName() {
                 return isStatic ? 'Prerender' : 'Server';
               },
@@ -2222,6 +2247,7 @@ describe('ReactFlightDOMNode', () => {
         await reencodeFlightStream(
           chunks1.static,
           chunks1.dynamic,
+          startTime,
           serverConsumerManifestForFlight,
         );
 

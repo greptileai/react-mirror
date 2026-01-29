@@ -661,6 +661,7 @@ function RequestInstance(
   onFatalError: (error: mixed) => void,
   identifierPrefix?: string,
   temporaryReferences: void | TemporaryReferenceSet,
+  debugStartTime: void | number, // Profiling-only
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
@@ -753,7 +754,15 @@ function RequestInstance(
     // This avoids leaking unnecessary information like how long the server has
     // been running and allows for more compact representation of each timestamp.
     // The time origin is stored as an offset in the time space of this environment.
-    timeOrigin = this.timeOrigin = performance.now();
+    if (typeof debugStartTime === 'number') {
+      // We expect `startTime` to be an absolute timestamp, so relativize it to match the other case.
+      timeOrigin = this.timeOrigin =
+        debugStartTime -
+        // $FlowFixMe[prop-missing]
+        performance.timeOrigin;
+    } else {
+      timeOrigin = this.timeOrigin = performance.now();
+    }
     emitTimeOriginChunk(
       this,
       timeOrigin +
@@ -786,6 +795,7 @@ export function createRequest(
   onError: void | ((error: mixed) => ?string),
   identifierPrefix: void | string,
   temporaryReferences: void | TemporaryReferenceSet,
+  debugStartTime: void | number, // Profiling-only
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
@@ -804,6 +814,7 @@ export function createRequest(
     noop,
     identifierPrefix,
     temporaryReferences,
+    debugStartTime,
     environmentName,
     filterStackFrame,
     keepDebugAlive,
@@ -818,6 +829,7 @@ export function createPrerenderRequest(
   onError: void | ((error: mixed) => ?string),
   identifierPrefix: void | string,
   temporaryReferences: void | TemporaryReferenceSet,
+  debugStartTime: void | number, // Profiling-only
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
@@ -836,6 +848,7 @@ export function createPrerenderRequest(
     onFatalError,
     identifierPrefix,
     temporaryReferences,
+    debugStartTime,
     environmentName,
     filterStackFrame,
     keepDebugAlive,

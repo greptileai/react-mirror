@@ -22,12 +22,11 @@ type MinimizeOptions = {
 
 type CompileSuccess = {kind: 'success'};
 type CompileParseError = {kind: 'parse_error'; message: string};
-type CompileCompilerError = {
-  kind: 'error';
-  category: string;
-  reason: string;
+type CompileErrors = {
+  kind: 'errors';
+  errors: Array<{category: string; reason: string}>;
 };
-type CompileResult = CompileSuccess | CompileParseError | CompileCompilerError;
+type CompileResult = CompileSuccess | CompileParseError | CompileErrors;
 
 /**
  * Compile code and extract error information
@@ -81,18 +80,23 @@ function compileAndGetError(
     };
     // Check if this is a CompilerError with details
     if (error.details && error.details.length > 0) {
-      const detail = error.details[0];
       return {
-        kind: 'error',
-        category: detail.category,
-        reason: detail.reason,
+        kind: 'errors',
+        errors: error.details.map(detail => ({
+          category: detail.category,
+          reason: detail.reason,
+        })),
       };
     }
     // Fallback for other errors - use error name/message
     return {
-      kind: 'error',
-      category: error.name ?? 'Error',
-      reason: error.message,
+      kind: 'errors',
+      errors: [
+        {
+          category: error.name ?? 'Error',
+          reason: error.message,
+        },
+      ],
     };
   }
 }
@@ -100,11 +104,22 @@ function compileAndGetError(
 /**
  * Check if two compile errors match
  */
-function errorsMatch(a: CompileCompilerError, b: CompileResult): boolean {
-  if (b.kind !== 'error') {
+function errorsMatch(a: CompileErrors, b: CompileResult): boolean {
+  if (b.kind !== 'errors') {
     return false;
   }
-  return a.category === b.category && a.reason === b.reason;
+  if (a.errors.length !== b.errors.length) {
+    return false;
+  }
+  for (let i = 0; i < a.errors.length; i++) {
+    if (
+      a.errors[i].category !== b.errors[i].category ||
+      a.errors[i].reason !== b.errors[i].reason
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**

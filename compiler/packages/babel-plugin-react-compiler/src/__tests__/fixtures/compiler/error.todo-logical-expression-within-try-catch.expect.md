@@ -3,13 +3,19 @@
 
 ```javascript
 function Component(props) {
+  const x = [];
   let result;
-  try {
-    result = props.cond && props.foo;
-  } catch (e) {
-    console.log(e);
+  for (let i = 0; i < 10; i++) {
+    if (cond) {
+      try {
+        result = {key: bar([props.cond && props.foo])};
+      } catch (e) {
+        console.log(e);
+      }
+    }
   }
-  return result;
+  x.push(result);
+  return <Stringify x={x} />;
 }
 
 ```
@@ -22,14 +28,14 @@ Found 1 error:
 
 Todo: Support value blocks (conditional, logical, optional chaining, etc) within a try/catch statement
 
-error.todo-logical-expression-within-try-catch.ts:4:13
-  2 |   let result;
-  3 |   try {
-> 4 |     result = props.cond && props.foo;
-    |              ^^^^^ Support value blocks (conditional, logical, optional chaining, etc) within a try/catch statement
-  5 |   } catch (e) {
-  6 |     console.log(e);
-  7 |   }
+error.todo-logical-expression-within-try-catch.ts:7:28
+   5 |     if (cond) {
+   6 |       try {
+>  7 |         result = {key: bar([props.cond && props.foo])};
+     |                             ^^^^^ Support value blocks (conditional, logical, optional chaining, etc) within a try/catch statement
+   8 |       } catch (e) {
+   9 |         console.log(e);
+  10 |       }
 ```
           
       

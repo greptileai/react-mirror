@@ -23,7 +23,7 @@ import {
 } from './runner-watch';
 import * as runnerWorker from './runner-worker';
 import {execSync} from 'child_process';
-import { runMinimize } from './minimize';
+import {runMinimize} from './minimize';
 
 const WORKER_PATH = require.resolve('./runner-worker.js');
 const NUM_WORKERS = cpus().length - 1;
@@ -66,7 +66,10 @@ yargs(hideBin(process.argv))
         )
         .default('worker-threads', true)
         .boolean('watch')
-        .describe('watch', 'Run compiler in watch mode, re-running after changes')
+        .describe(
+          'watch',
+          'Run compiler in watch mode, re-running after changes',
+        )
         .alias('w', 'watch')
         .default('watch', false)
         .boolean('update')
@@ -311,4 +314,3 @@ export async function main(opts: RunnerOptions): Promise<void> {
       );
   }
 }
-

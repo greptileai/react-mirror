@@ -1751,7 +1751,11 @@ function collectUniqueIdentifierNames(ast: t.File): Set<string> {
 /**
  * Helper to rename all occurrences of an identifier throughout the AST
  */
-function renameAllIdentifiers(ast: t.File, oldName: string, newName: string): boolean {
+function renameAllIdentifiers(
+  ast: t.File,
+  oldName: string,
+  newName: string,
+): boolean {
   let modified = false;
   t.traverseFast(ast, node => {
     if (t.isIdentifier(node) && node.name === oldName) {
@@ -1771,7 +1775,11 @@ function* simplifyIdentifiersRemoveOnPrefix(ast: t.File): Generator<t.File> {
 
   for (const name of names) {
     // Check if name starts with "on" followed by uppercase letter
-    if (name.length > 2 && name.startsWith('on') && name[2] === name[2].toUpperCase()) {
+    if (
+      name.length > 2 &&
+      name.startsWith('on') &&
+      name[2] === name[2].toUpperCase()
+    ) {
       const newName = name.slice(2);
       // Skip if the new name would conflict with an existing identifier
       if (names.has(newName)) {

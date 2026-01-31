@@ -42,9 +42,9 @@ async function runTestCommand(opts: RunnerOptions): Promise<void> {
   await main(opts);
 }
 
-function runMinimizeCommand(): void {
-  console.error('The minimize command is not yet implemented.');
-  process.exit(1);
+async function runMinimizeCommand(path: string): Promise<void> {
+  const {runMinimize} = await import('./minimize.js');
+  await runMinimize({path});
 }
 
 yargs(hideBin(process.argv))
@@ -90,10 +90,16 @@ yargs(hideBin(process.argv))
   )
   .command(
     'minimize',
-    'Minimize a test fixture (not yet implemented)',
-    () => {},
-    () => {
-      runMinimizeCommand();
+    'Minimize a test case to reproduce a compiler error',
+    yargs => {
+      return yargs
+        .string('path')
+        .alias('p', 'path')
+        .describe('path', 'Path to the file to minimize')
+        .demandOption('path');
+    },
+    async argv => {
+      await runMinimizeCommand(argv.path as string);
     },
   )
   .help('help')

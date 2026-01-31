@@ -316,6 +316,12 @@ export const SelectiveHydrationException: mixed = new Error(
 
 let didReceiveUpdate: boolean = false;
 
+// Map from SimpleMemoComponent function to compare a.k.a. arePropsEqual function.
+const simpleMemoComponentToCompare = new WeakMap<
+  Function,
+  (objA: mixed, objB: mixed) => boolean,
+>();
+
 let didWarnAboutBadClass;
 let didWarnAboutContextTypeOnFunctionComponent;
 let didWarnAboutContextTypes;
@@ -476,16 +482,18 @@ function updateMemoComponent(
 ): null | Fiber {
   if (current === null) {
     const type = Component.type;
-    if (isSimpleFunctionComponent(type) && Component.compare === null) {
+    if (isSimpleFunctionComponent(type)) {
       let resolvedType = type;
       if (__DEV__) {
         resolvedType = resolveFunctionForHotReloading(type);
       }
       // If this is a plain function component without default props,
-      // and with only the default shallow comparison, we upgrade it
-      // to a SimpleMemoComponent to allow fast path updates.
+      // we upgrade it to a SimpleMemoComponent to allow fast path updates.
       workInProgress.tag = SimpleMemoComponent;
       workInProgress.type = resolvedType;
+      if (Component.compare) {
+        simpleMemoComponentToCompare.set(resolvedType, Component.compare);
+      }
       if (__DEV__) {
         validateFunctionComponentInDev(workInProgress, type);
       }
@@ -546,9 +554,10 @@ function updateSimpleMemoComponent(
   // hasn't yet mounted. This happens when the inner render suspends.
   // We'll need to figure out if this is fine or can cause issues.
   if (current !== null) {
+    const compare = simpleMemoComponentToCompare.get(Component) ?? shallowEqual;
     const prevProps = current.memoizedProps;
     if (
-      shallowEqual(prevProps, nextProps) &&
+      compare(prevProps, nextProps) &&
       current.ref === workInProgress.ref &&
       // Prevent bailout if the implementation changed due to hot reload.
       (__DEV__ ? workInProgress.type === current.type : true)

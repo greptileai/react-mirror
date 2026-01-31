@@ -167,6 +167,13 @@ export function addValueToProperties(
               didTruncate
                 ? array.slice(0, OBJECT_WIDTH_LIMIT).concat('…')
                 : array,
+              (_key, value) => {
+                if(typeof value === 'bigint') {
+                  return value.toString();
+                }
+
+                return value;
+              }
             );
             break;
           } else if (kind === ENTRIES_ARRAY) {

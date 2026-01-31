@@ -68,7 +68,7 @@ import {ReactiveFunctionTransform, Transformed} from './visitors';
  * ```
  * let t0;
  * if (props.cond !== $[0]) {
- *   t0 = Symbol.for('react.memo_cache_sentinel');
+ *   t0 = globalThis.Symbol.for('react.memo_cache_sentinel');
  *   bb0: {
  *     let x = [];
  *     if (props.cond) {
@@ -77,7 +77,7 @@ import {ReactiveFunctionTransform, Transformed} from './visitors';
  *       break bb0;
  *     } else {
  *       let t1;
- *       if ($[1] === Symbol.for('react.memo_cache_sentinel')) {
+ *       if ($[1] === globalThis.Symbol.for('react.memo_cache_sentinel')) {
  *         t1 = foo();
  *         $[1] = t1;
  *       } else {
@@ -93,7 +93,7 @@ import {ReactiveFunctionTransform, Transformed} from './visitors';
  *   t0 = $[2];
  * }
  * // This part added in CodegenReactiveScope:
- * if (t0 !== Symbol.for('react.memo_cache_sentinel')) {
+ * if (t0 !== globalThis.Symbol.for('react.memo_cache_sentinel')) {
  *   return t0;
  * }
  * ```
@@ -161,6 +161,7 @@ class Transform extends ReactiveFunctionTransform<State> {
         const instructions = scopeBlock.instructions;
         const loc = earlyReturnValue.loc;
         const sentinelTemp = createTemporaryPlace(this.env, loc);
+        const globalThisTemp = createTemporaryPlace(this.env, loc);
         const symbolTemp = createTemporaryPlace(this.env, loc);
         const forTemp = createTemporaryPlace(this.env, loc);
         const argTemp = createTemporaryPlace(this.env, loc);
@@ -170,13 +171,27 @@ class Transform extends ReactiveFunctionTransform<State> {
             instruction: {
               id: makeInstructionId(0),
               loc,
-              lvalue: {...symbolTemp},
+              lvalue: {...globalThisTemp},
               value: {
                 kind: 'LoadGlobal',
                 binding: {
                   kind: 'Global',
-                  name: 'Symbol',
+                  name: 'globalThis',
                 },
+                loc,
+              },
+            },
+          },
+          {
+            kind: 'instruction',
+            instruction: {
+              id: makeInstructionId(0),
+              loc,
+              lvalue: {...symbolTemp},
+              value: {
+                kind: 'PropertyLoad',
+                object: {...globalThisTemp},
+                property: makePropertyLiteral('Symbol'),
                 loc,
               },
             },

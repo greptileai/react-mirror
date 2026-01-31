@@ -125,39 +125,45 @@ function cloneAst(ast: t.File): t.File {
  * Generator that yields ASTs with statements removed one at a time
  */
 function* removeStatements(ast: t.File): Generator<t.File> {
-  // Collect all statement containers and their indices
-  const statementContainers: Array<{
-    statements: t.Statement[];
-    index: number;
-  }> = [];
+  // Collect all statement locations: which container (by index) and which statement index
+  const statementLocations: Array<{containerIndex: number; stmtIndex: number}> =
+    [];
+  let containerIndex = 0;
 
   t.traverseFast(ast, node => {
     if (t.isBlockStatement(node) || t.isProgram(node)) {
       const body = node.body as t.Statement[];
       // Iterate in reverse order so removing later statements first
       for (let i = body.length - 1; i >= 0; i--) {
-        statementContainers.push({statements: body, index: i});
+        statementLocations.push({containerIndex, stmtIndex: i});
       }
+      containerIndex++;
     }
   });
 
-  for (const {statements, index} of statementContainers) {
+  for (const {
+    containerIndex: targetContainerIdx,
+    stmtIndex,
+  } of statementLocations) {
     const cloned = cloneAst(ast);
-    // Find the corresponding statements array in the cloned AST
-    let found = false;
+    let idx = 0;
+    let modified = false;
+
     t.traverseFast(cloned, node => {
-      if (found) return;
+      if (modified) return;
       if (t.isBlockStatement(node) || t.isProgram(node)) {
-        const body = node.body as t.Statement[];
-        // Check if this is the same container by comparing original lengths
-        // and ensuring the statement at the index exists
-        if (body.length === statements.length && body[index]) {
-          body.splice(index, 1);
-          found = true;
+        if (idx === targetContainerIdx) {
+          const body = node.body as t.Statement[];
+          if (stmtIndex < body.length) {
+            body.splice(stmtIndex, 1);
+            modified = true;
+          }
         }
+        idx++;
       }
     });
-    if (found) {
+
+    if (modified) {
       yield cloned;
     }
   }
@@ -228,8 +234,8 @@ function* simplifyCallExpressions(ast: t.File): Generator<t.File> {
         if (path.node.arguments.length > 0 && idx === targetIdx) {
           const args = path.node.arguments;
           // Filter to only Expression arguments (not SpreadElement)
-          const exprArgs = args.filter(
-            (arg): arg is t.Expression => t.isExpression(arg),
+          const exprArgs = args.filter((arg): arg is t.Expression =>
+            t.isExpression(arg),
           );
           if (exprArgs.length === 0) {
             idx++;
@@ -295,7 +301,7 @@ function* simplifyCallExpressions(ast: t.File): Generator<t.File> {
 }
 
 /**
- * Generator that simplifies conditional expressions (a ? b : c) -> b or c
+ * Generator that simplifies conditional expressions (a ? b : c) -> a, b, or c
  */
 function* simplifyConditionals(ast: t.File): Generator<t.File> {
   // Count conditionals
@@ -306,7 +312,29 @@ function* simplifyConditionals(ast: t.File): Generator<t.File> {
     }
   });
 
-  // For each conditional, try replacing with consequent
+  // Try replacing with test condition
+  for (let targetIdx = 0; targetIdx < condCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let modified = false;
+    let idx = 0;
+
+    traverse(cloned, {
+      ConditionalExpression(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.test);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with consequent
   for (let targetIdx = 0; targetIdx < condCount; targetIdx++) {
     const cloned = cloneAst(ast);
     let modified = false;
@@ -415,7 +443,10 @@ function* simplifyOptionalChains(ast: t.File): Generator<t.File> {
   // Count optional expressions
   let optionalCount = 0;
   t.traverseFast(ast, node => {
-    if (t.isOptionalMemberExpression(node) || t.isOptionalCallExpression(node)) {
+    if (
+      t.isOptionalMemberExpression(node) ||
+      t.isOptionalCallExpression(node)
+    ) {
       optionalCount++;
     }
   });
@@ -443,6 +474,777 @@ function* simplifyOptionalChains(ast: t.File): Generator<t.File> {
             path.replaceWith(t.callExpression(callee, args));
             modified = true;
           }
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies await expressions: await expr -> expr
+ */
+function* simplifyAwaitExpressions(ast: t.File): Generator<t.File> {
+  // Count await expressions
+  let awaitCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isAwaitExpression(node)) {
+      awaitCount++;
+    }
+  });
+
+  for (let targetIdx = 0; targetIdx < awaitCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      AwaitExpression(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.argument);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies if statements:
+ * - Replace with test expression (as expression statement)
+ * - Replace with consequent block
+ * - Replace with alternate block (if present)
+ */
+function* simplifyIfStatements(ast: t.File): Generator<t.File> {
+  // Count if statements
+  let ifCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isIfStatement(node)) {
+      ifCount++;
+    }
+  });
+
+  // Try replacing with test expression
+  for (let targetIdx = 0; targetIdx < ifCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      IfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.test));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with consequent
+  for (let targetIdx = 0; targetIdx < ifCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      IfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.consequent);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with alternate (if present)
+  for (let targetIdx = 0; targetIdx < ifCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      IfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.alternate) {
+          path.replaceWith(path.node.alternate);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies switch statements:
+ * - Replace with discriminant expression
+ * - Replace with each case's consequent statements
+ */
+function* simplifySwitchStatements(ast: t.File): Generator<t.File> {
+  // Count switch statements
+  let switchCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isSwitchStatement(node)) {
+      switchCount++;
+    }
+  });
+
+  // Try replacing with discriminant
+  for (let targetIdx = 0; targetIdx < switchCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      SwitchStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.discriminant));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // For each switch, try replacing with each case's body
+  for (let targetIdx = 0; targetIdx < switchCount; targetIdx++) {
+    // Find case count for this switch
+    let caseCount = 0;
+    let currentIdx = 0;
+    t.traverseFast(ast, node => {
+      if (t.isSwitchStatement(node)) {
+        if (currentIdx === targetIdx) {
+          caseCount = node.cases.length;
+        }
+        currentIdx++;
+      }
+    });
+
+    for (let caseIdx = 0; caseIdx < caseCount; caseIdx++) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      traverse(cloned, {
+        SwitchStatement(path) {
+          if (modified) return;
+          if (idx === targetIdx) {
+            const switchCase = path.node.cases[caseIdx];
+            if (switchCase && switchCase.consequent.length > 0) {
+              path.replaceWithMultiple(switchCase.consequent);
+              modified = true;
+            }
+          }
+          idx++;
+        },
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that simplifies while statements:
+ * - Replace with test expression
+ * - Replace with body
+ */
+function* simplifyWhileStatements(ast: t.File): Generator<t.File> {
+  // Count while statements
+  let whileCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isWhileStatement(node)) {
+      whileCount++;
+    }
+  });
+
+  // Try replacing with test
+  for (let targetIdx = 0; targetIdx < whileCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      WhileStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.test));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with body
+  for (let targetIdx = 0; targetIdx < whileCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      WhileStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies do-while statements:
+ * - Replace with test expression
+ * - Replace with body
+ */
+function* simplifyDoWhileStatements(ast: t.File): Generator<t.File> {
+  // Count do-while statements
+  let doWhileCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isDoWhileStatement(node)) {
+      doWhileCount++;
+    }
+  });
+
+  // Try replacing with test
+  for (let targetIdx = 0; targetIdx < doWhileCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      DoWhileStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.test));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with body
+  for (let targetIdx = 0; targetIdx < doWhileCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      DoWhileStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies for statements:
+ * - Replace with init (if expression)
+ * - Replace with test expression
+ * - Replace with update expression
+ * - Replace with body
+ */
+function* simplifyForStatements(ast: t.File): Generator<t.File> {
+  // Count for statements
+  let forCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isForStatement(node)) {
+      forCount++;
+    }
+  });
+
+  // Try replacing with init (if it's an expression)
+  for (let targetIdx = 0; targetIdx < forCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.init) {
+          if (t.isExpression(path.node.init)) {
+            path.replaceWith(t.expressionStatement(path.node.init));
+          } else {
+            // It's a VariableDeclaration
+            path.replaceWith(path.node.init);
+          }
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with test
+  for (let targetIdx = 0; targetIdx < forCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.test) {
+          path.replaceWith(t.expressionStatement(path.node.test));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with update
+  for (let targetIdx = 0; targetIdx < forCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.update) {
+          path.replaceWith(t.expressionStatement(path.node.update));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with body
+  for (let targetIdx = 0; targetIdx < forCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies for-in statements:
+ * - Replace with left (variable declaration or expression)
+ * - Replace with right expression
+ * - Replace with body
+ */
+function* simplifyForInStatements(ast: t.File): Generator<t.File> {
+  // Count for-in statements
+  let forInCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isForInStatement(node)) {
+      forInCount++;
+    }
+  });
+
+  // Try replacing with left
+  for (let targetIdx = 0; targetIdx < forInCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForInStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          const left = path.node.left;
+          if (t.isExpression(left)) {
+            path.replaceWith(t.expressionStatement(left));
+          } else {
+            path.replaceWith(left);
+          }
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with right
+  for (let targetIdx = 0; targetIdx < forInCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForInStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.right));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with body
+  for (let targetIdx = 0; targetIdx < forInCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForInStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies for-of statements:
+ * - Replace with left (variable declaration or expression)
+ * - Replace with right expression
+ * - Replace with body
+ */
+function* simplifyForOfStatements(ast: t.File): Generator<t.File> {
+  // Count for-of statements
+  let forOfCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isForOfStatement(node)) {
+      forOfCount++;
+    }
+  });
+
+  // Try replacing with left
+  for (let targetIdx = 0; targetIdx < forOfCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForOfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          const left = path.node.left;
+          if (t.isExpression(left)) {
+            path.replaceWith(t.expressionStatement(left));
+          } else {
+            path.replaceWith(left);
+          }
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with right
+  for (let targetIdx = 0; targetIdx < forOfCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForOfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(t.expressionStatement(path.node.right));
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with body
+  for (let targetIdx = 0; targetIdx < forOfCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ForOfStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies variable declarations by removing init expressions.
+ * let x = expr; -> let x;
+ * var x = expr; -> var x;
+ * Note: const without init is invalid, so we skip const declarations.
+ */
+function* simplifyVariableDeclarations(ast: t.File): Generator<t.File> {
+  // Collect all variable declarators with init expressions (excluding const)
+  const declaratorSites: Array<{declIndex: number}> = [];
+  let declIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isVariableDeclaration(node) && node.kind !== 'const') {
+      for (const declarator of node.declarations) {
+        if (declarator.init) {
+          declaratorSites.push({declIndex});
+          declIndex++;
+        }
+      }
+    }
+  });
+
+  // Try removing init from each declarator
+  for (const {declIndex: targetDeclIdx} of declaratorSites) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    t.traverseFast(cloned, node => {
+      if (modified) return;
+      if (t.isVariableDeclaration(node) && node.kind !== 'const') {
+        for (const declarator of node.declarations) {
+          if (declarator.init) {
+            if (idx === targetDeclIdx) {
+              declarator.init = null;
+              modified = true;
+              return;
+            }
+            idx++;
+          }
+        }
+      }
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies try/catch/finally statements:
+ * - Replace with try block contents
+ * - Replace with catch block contents (if present)
+ * - Replace with finally block contents (if present)
+ */
+function* simplifyTryStatements(ast: t.File): Generator<t.File> {
+  // Count try statements
+  let tryCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isTryStatement(node)) {
+      tryCount++;
+    }
+  });
+
+  // Try replacing with try block contents
+  for (let targetIdx = 0; targetIdx < tryCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      TryStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.block);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with catch block contents (if present)
+  for (let targetIdx = 0; targetIdx < tryCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      TryStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.handler) {
+          path.replaceWith(path.node.handler.body);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with finally block contents (if present)
+  for (let targetIdx = 0; targetIdx < tryCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      TryStatement(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.finalizer) {
+          path.replaceWith(path.node.finalizer);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that simplifies single-statement block statements:
+ * { statement } -> statement
+ */
+function* simplifySingleStatementBlocks(ast: t.File): Generator<t.File> {
+  // Count block statements with exactly one statement
+  let blockCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isBlockStatement(node) && node.body.length === 1) {
+      blockCount++;
+    }
+  });
+
+  for (let targetIdx = 0; targetIdx < blockCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      BlockStatement(path) {
+        if (modified) return;
+        if (path.node.body.length === 1 && idx === targetIdx) {
+          // Don't unwrap blocks that require BlockStatement syntax
+          if (
+            t.isFunction(path.parent) ||
+            t.isCatchClause(path.parent) ||
+            t.isClassMethod(path.parent) ||
+            t.isObjectMethod(path.parent) ||
+            t.isTryStatement(path.parent)
+          ) {
+            idx++;
+            return;
+          }
+          path.replaceWith(path.node.body[0]);
+          modified = true;
         }
         idx++;
       },
@@ -494,6 +1296,123 @@ function* removeArrayElements(ast: t.File): Generator<t.File> {
 }
 
 /**
+ * Generator that removes JSX element attributes (props) one at a time
+ */
+function* removeJSXAttributes(ast: t.File): Generator<t.File> {
+  // Collect all JSX elements with their attribute counts
+  const jsxSites: Array<{jsxIndex: number; attrCount: number}> = [];
+  let jsxIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isJSXOpeningElement(node) && node.attributes.length > 0) {
+      jsxSites.push({jsxIndex, attrCount: node.attributes.length});
+      jsxIndex++;
+    }
+  });
+
+  // For each JSX element, try removing each attribute one at a time (from end to start)
+  for (const {jsxIndex: targetJsxIdx, attrCount} of jsxSites) {
+    for (let attrIdx = attrCount - 1; attrIdx >= 0; attrIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isJSXOpeningElement(node) && node.attributes.length > 0) {
+          if (idx === targetJsxIdx && attrIdx < node.attributes.length) {
+            node.attributes.splice(attrIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that removes JSX element children one at a time
+ */
+function* removeJSXChildren(ast: t.File): Generator<t.File> {
+  // Collect all JSX elements with children
+  const jsxSites: Array<{jsxIndex: number; childCount: number}> = [];
+  let jsxIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isJSXElement(node) && node.children.length > 0) {
+      jsxSites.push({jsxIndex, childCount: node.children.length});
+      jsxIndex++;
+    }
+  });
+
+  // For each JSX element, try removing each child one at a time (from end to start)
+  for (const {jsxIndex: targetJsxIdx, childCount} of jsxSites) {
+    for (let childIdx = childCount - 1; childIdx >= 0; childIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isJSXElement(node) && node.children.length > 0) {
+          if (idx === targetJsxIdx && childIdx < node.children.length) {
+            node.children.splice(childIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that removes JSX fragment children one at a time
+ */
+function* removeJSXFragmentChildren(ast: t.File): Generator<t.File> {
+  // Collect all JSX fragments with children
+  const fragmentSites: Array<{fragIndex: number; childCount: number}> = [];
+  let fragIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isJSXFragment(node) && node.children.length > 0) {
+      fragmentSites.push({fragIndex, childCount: node.children.length});
+      fragIndex++;
+    }
+  });
+
+  // For each fragment, try removing each child one at a time (from end to start)
+  for (const {fragIndex: targetFragIdx, childCount} of fragmentSites) {
+    for (let childIdx = childCount - 1; childIdx >= 0; childIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isJSXFragment(node) && node.children.length > 0) {
+          if (idx === targetFragIdx && childIdx < node.children.length) {
+            node.children.splice(childIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
  * Generator that replaces single-element arrays with the element itself
  */
 function* simplifySingleElementArrays(ast: t.File): Generator<t.File> {
@@ -517,6 +1436,75 @@ function* simplifySingleElementArrays(ast: t.File): Generator<t.File> {
           const elem = path.node.elements[0];
           if (t.isExpression(elem)) {
             path.replaceWith(elem);
+            modified = true;
+          }
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Generator that replaces single-property objects with the property value.
+ * For regular properties: {key: value} -> value
+ * For computed properties: {[key]: value} -> key (also try value)
+ */
+function* simplifySinglePropertyObjects(ast: t.File): Generator<t.File> {
+  // Count single-property objects
+  let objectCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isObjectExpression(node) && node.properties.length === 1) {
+      objectCount++;
+    }
+  });
+
+  // Try replacing with value
+  for (let targetIdx = 0; targetIdx < objectCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ObjectExpression(path) {
+        if (modified) return;
+        if (path.node.properties.length === 1 && idx === targetIdx) {
+          const prop = path.node.properties[0];
+          if (t.isObjectProperty(prop) && t.isExpression(prop.value)) {
+            path.replaceWith(prop.value);
+            modified = true;
+          }
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // For computed properties, also try replacing with key
+  for (let targetIdx = 0; targetIdx < objectCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      ObjectExpression(path) {
+        if (modified) return;
+        if (path.node.properties.length === 1 && idx === targetIdx) {
+          const prop = path.node.properties[0];
+          if (
+            t.isObjectProperty(prop) &&
+            prop.computed &&
+            t.isExpression(prop.key)
+          ) {
+            path.replaceWith(prop.key);
             modified = true;
           }
         }
@@ -565,6 +1553,66 @@ function* removeObjectProperties(ast: t.File): Generator<t.File> {
       if (modified) {
         yield cloned;
       }
+    }
+  }
+}
+
+/**
+ * Generator that simplifies assignment expressions (a = b) -> a or b
+ */
+function* simplifyAssignmentExpressions(ast: t.File): Generator<t.File> {
+  // Count assignment expressions
+  let assignmentCount = 0;
+  t.traverseFast(ast, node => {
+    if (t.isAssignmentExpression(node)) {
+      assignmentCount++;
+    }
+  });
+
+  // Try replacing with left side (assignment target)
+  for (let targetIdx = 0; targetIdx < assignmentCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      AssignmentExpression(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          const left = path.node.left;
+          if (t.isExpression(left)) {
+            path.replaceWith(left);
+            modified = true;
+          }
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+
+  // Try replacing with right side (assignment value)
+  for (let targetIdx = 0; targetIdx < assignmentCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      AssignmentExpression(path) {
+        if (modified) return;
+        if (idx === targetIdx) {
+          path.replaceWith(path.node.right);
+          modified = true;
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
     }
   }
 }
@@ -628,6 +1676,7 @@ function* simplifyBinaryExpressions(ast: t.File): Generator<t.File> {
 
 /**
  * Generator that simplifies member expressions (obj.value) -> obj
+ * For computed expressions: obj[key] -> obj or key
  */
 function* simplifyMemberExpressions(ast: t.File): Generator<t.File> {
   // Count member expressions
@@ -638,6 +1687,7 @@ function* simplifyMemberExpressions(ast: t.File): Generator<t.File> {
     }
   });
 
+  // Try replacing with object
   for (let targetIdx = 0; targetIdx < memberCount; targetIdx++) {
     const cloned = cloneAst(ast);
     let idx = 0;
@@ -658,6 +1708,125 @@ function* simplifyMemberExpressions(ast: t.File): Generator<t.File> {
       yield cloned;
     }
   }
+
+  // For computed expressions, also try replacing with key
+  for (let targetIdx = 0; targetIdx < memberCount; targetIdx++) {
+    const cloned = cloneAst(ast);
+    let idx = 0;
+    let modified = false;
+
+    traverse(cloned, {
+      MemberExpression(path) {
+        if (modified) return;
+        if (idx === targetIdx && path.node.computed) {
+          const property = path.node.property;
+          if (t.isExpression(property)) {
+            path.replaceWith(property);
+            modified = true;
+          }
+        }
+        idx++;
+      },
+    });
+
+    if (modified) {
+      yield cloned;
+    }
+  }
+}
+
+/**
+ * Helper to collect all unique identifier names in the AST
+ */
+function collectUniqueIdentifierNames(ast: t.File): Set<string> {
+  const names = new Set<string>();
+  t.traverseFast(ast, node => {
+    if (t.isIdentifier(node)) {
+      names.add(node.name);
+    }
+  });
+  return names;
+}
+
+/**
+ * Helper to rename all occurrences of an identifier throughout the AST
+ */
+function renameAllIdentifiers(ast: t.File, oldName: string, newName: string): boolean {
+  let modified = false;
+  t.traverseFast(ast, node => {
+    if (t.isIdentifier(node) && node.name === oldName) {
+      node.name = newName;
+      modified = true;
+    }
+  });
+  return modified;
+}
+
+/**
+ * Generator that simplifies identifiers by removing "on" prefix.
+ * onClick -> Click
+ */
+function* simplifyIdentifiersRemoveOnPrefix(ast: t.File): Generator<t.File> {
+  const names = collectUniqueIdentifierNames(ast);
+
+  for (const name of names) {
+    // Check if name starts with "on" followed by uppercase letter
+    if (name.length > 2 && name.startsWith('on') && name[2] === name[2].toUpperCase()) {
+      const newName = name.slice(2);
+      // Skip if the new name would conflict with an existing identifier
+      if (names.has(newName)) {
+        continue;
+      }
+      const cloned = cloneAst(ast);
+      if (renameAllIdentifiers(cloned, name, newName)) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that simplifies identifiers by removing "Ref" suffix.
+ * inputRef -> input
+ */
+function* simplifyIdentifiersRemoveRefSuffix(ast: t.File): Generator<t.File> {
+  const names = collectUniqueIdentifierNames(ast);
+
+  for (const name of names) {
+    // Check if name ends with "Ref" and has more characters before it
+    if (name.length > 3 && name.endsWith('Ref')) {
+      const newName = name.slice(0, -3);
+      // Skip if the new name would conflict with an existing identifier
+      if (names.has(newName)) {
+        continue;
+      }
+      // Skip if new name would be empty or just whitespace
+      if (newName.length === 0) {
+        continue;
+      }
+      const cloned = cloneAst(ast);
+      if (renameAllIdentifiers(cloned, name, newName)) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that rewrites "ref" identifier to "ref_" to avoid conflicts.
+ */
+function* simplifyIdentifiersRenameRef(ast: t.File): Generator<t.File> {
+  const names = collectUniqueIdentifierNames(ast);
+
+  if (names.has('ref')) {
+    // Only rename if ref_ doesn't already exist
+    if (!names.has('ref_')) {
+      const cloned = cloneAst(ast);
+      if (renameAllIdentifiers(cloned, 'ref', 'ref_')) {
+        yield cloned;
+      }
+    }
+  }
 }
 
 /**
@@ -668,13 +1837,53 @@ const simplificationStrategies = [
   {name: 'removeCallArguments', generator: removeCallArguments},
   {name: 'removeArrayElements', generator: removeArrayElements},
   {name: 'removeObjectProperties', generator: removeObjectProperties},
+  {name: 'removeJSXAttributes', generator: removeJSXAttributes},
+  {name: 'removeJSXChildren', generator: removeJSXChildren},
+  {name: 'removeJSXFragmentChildren', generator: removeJSXFragmentChildren},
   {name: 'simplifyCallExpressions', generator: simplifyCallExpressions},
   {name: 'simplifyConditionals', generator: simplifyConditionals},
   {name: 'simplifyLogicalExpressions', generator: simplifyLogicalExpressions},
   {name: 'simplifyBinaryExpressions', generator: simplifyBinaryExpressions},
+  {
+    name: 'simplifyAssignmentExpressions',
+    generator: simplifyAssignmentExpressions,
+  },
   {name: 'simplifySingleElementArrays', generator: simplifySingleElementArrays},
+  {
+    name: 'simplifySinglePropertyObjects',
+    generator: simplifySinglePropertyObjects,
+  },
   {name: 'simplifyMemberExpressions', generator: simplifyMemberExpressions},
   {name: 'simplifyOptionalChains', generator: simplifyOptionalChains},
+  {name: 'simplifyAwaitExpressions', generator: simplifyAwaitExpressions},
+  {name: 'simplifyIfStatements', generator: simplifyIfStatements},
+  {name: 'simplifySwitchStatements', generator: simplifySwitchStatements},
+  {name: 'simplifyWhileStatements', generator: simplifyWhileStatements},
+  {name: 'simplifyDoWhileStatements', generator: simplifyDoWhileStatements},
+  {name: 'simplifyForStatements', generator: simplifyForStatements},
+  {name: 'simplifyForInStatements', generator: simplifyForInStatements},
+  {name: 'simplifyForOfStatements', generator: simplifyForOfStatements},
+  {
+    name: 'simplifyVariableDeclarations',
+    generator: simplifyVariableDeclarations,
+  },
+  {name: 'simplifyTryStatements', generator: simplifyTryStatements},
+  {
+    name: 'simplifySingleStatementBlocks',
+    generator: simplifySingleStatementBlocks,
+  },
+  {
+    name: 'simplifyIdentifiersRemoveOnPrefix',
+    generator: simplifyIdentifiersRemoveOnPrefix,
+  },
+  {
+    name: 'simplifyIdentifiersRemoveRefSuffix',
+    generator: simplifyIdentifiersRemoveRefSuffix,
+  },
+  {
+    name: 'simplifyIdentifiersRenameRef',
+    generator: simplifyIdentifiersRenameRef,
+  },
 ];
 
 type MinimizeResult =

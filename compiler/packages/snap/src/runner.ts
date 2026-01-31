@@ -23,6 +23,7 @@ import {
 } from './runner-watch';
 import * as runnerWorker from './runner-worker';
 import {execSync} from 'child_process';
+import { runMinimize } from './minimize';
 
 const WORKER_PATH = require.resolve('./runner-worker.js');
 const NUM_WORKERS = cpus().length - 1;
@@ -43,7 +44,6 @@ async function runTestCommand(opts: RunnerOptions): Promise<void> {
 }
 
 async function runMinimizeCommand(path: string): Promise<void> {
-  const {runMinimize} = await import('./minimize.js');
   await runMinimize({path});
 }
 

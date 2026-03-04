@@ -30,6 +30,12 @@ export type SuspenseTreeState = {
   selectedSuspenseID: SuspenseNode['id'] | null,
   timeline: $ReadOnlyArray<SuspenseTimelineStep>,
   timelineIndex: number | -1,
+  /**
+   * If we're on the Transition (i.e. first timeline step),
+   * this allows going one step further i.e. hiding the content entirely.
+   * This is only possible for a Transition (Activities) not the Initial Paint (roots).
+   */
+  unwindTransition: boolean,
   hoveredTimelineIndex: number | -1,
   uniqueSuspendersOnly: boolean,
   playing: boolean,
@@ -125,6 +131,7 @@ function getInitialState(store: Store): SuspenseTreeState {
     roots: store.roots,
     timeline,
     timelineIndex,
+    unwindTransition: false,
     hoveredTimelineIndex: -1,
     uniqueSuspendersOnly,
     playing: false,

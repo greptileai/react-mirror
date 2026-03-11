@@ -73,6 +73,7 @@ export const warnsIfNotActing = $$$config.warnsIfNotActing;
 export const supportsMutation = $$$config.supportsMutation;
 export const supportsPersistence = $$$config.supportsPersistence;
 export const supportsHydration = $$$config.supportsHydration;
+export const supportsViewTransition = $$$config.supportsViewTransition;
 export const getInstanceFromNode = $$$config.getInstanceFromNode;
 export const beforeActiveInstanceBlur = $$$config.beforeActiveInstanceBlur;
 export const afterActiveInstanceBlur = $$$config.afterActiveInstanceBlur;
@@ -167,6 +168,8 @@ export const addViewTransitionFinishedListener =
 export const getCurrentGestureOffset = $$$config.getCurrentGestureOffset;
 export const createViewTransitionInstance =
   $$$config.createViewTransitionInstance;
+export const finalizeViewTransitionChild =
+  $$$config.finalizeViewTransitionChild;
 export const clearContainer = $$$config.clearContainer;
 export const createFragmentInstance = $$$config.createFragmentInstance;
 export const updateFragmentInstanceFiber =

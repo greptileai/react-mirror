@@ -60,7 +60,7 @@
     "process": "0.11.10",
     "raw-loader": "^3.1.0",
     "rimraf": "^5.0.1",
-    "source-map-js": "^0.6.2",
+    "source-map-js": "^1.2.2",
     "style-loader": "^0.23.1",
     "webpack": "^5.82.1",
     "webpack-cli": "^5.1.1",

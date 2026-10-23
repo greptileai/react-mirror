@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@jridgewell/sourcemap-codec": "1.5.5",
-    "source-map-js": "^0.6.2"
+    "source-map-js": "^1.2.2"
   },
   "devDependencies": {
     "@babel/core": "^7.11.1",
